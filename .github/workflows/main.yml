@@ -1,0 +1,119 @@
+name: Mikrotik RouterOS Release Archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: |
+          RouterOS versions
+          Example:
+          6.44
+          6.44.1
+          (space, comma or newline separated)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Normalize version list
+        run: |
+          echo "${{ inputs.versions }}" \
+            | tr ', ' '\n' \
+            | sed '/^\s*$/d' \
+            | sort -u > versions.txt
+
+          echo "Versions to process:"
+          cat versions.txt
+
+      - name: Download files and create releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILES=(
+            "CHANGELOG"
+            "chr-VERSION.img.zip"
+            "chr-VERSION.ova"
+            "chr-VERSION.vmdk.zip"
+            "all_packages-arm-VERSION.zip"
+            "all_packages-arm64-VERSION.zip"
+            "all_packages-mipsbe-VERSION.zip"
+            "all_packages-mmips-VERSION.zip"
+            "all_packages-ppc-VERSION.zip"
+            "all_packages-smips-VERSION.zip"
+            "all_packages-tile-VERSION.zip"
+            "all_packages-x86-VERSION.zip"
+            "btest.exe"
+            "dude-install-VERSION.exe"
+            "flashfig.exe"
+            "install-image-VERSION.zip"
+            "mikrotik-VERSION.iso"
+            "mikrotik.mib"
+            "netinstall-VERSION.tar.gz"
+            "netinstall-VERSION.zip"
+            "netinstall64-VERSION.zip"
+            "routeros-arm-VERSION.npk"
+            "routeros-arm64-VERSION.npk"
+            "routeros-mipsbe-VERSION.npk"
+            "routeros-mmips-VERSION.npk"
+            "routeros-powerpc-VERSION.npk"
+            "routeros-smips-VERSION.npk"
+            "routeros-tile-VERSION.npk"
+            "routeros-x86-VERSION.npk"
+            "winbox.exe"
+            "winbox64.exe"
+          )
+
+          while read VERSION; do
+            echo "=============================="
+            echo "Processing RouterOS $VERSION"
+            echo "=============================="
+
+            if gh release view "$VERSION" >/dev/null 2>&1; then
+              echo "Release $VERSION already exists, skipping"
+              continue
+            fi
+
+            BASE_URL="https://download.mikrotik.com/routeros/$VERSION"
+            WORKDIR="$(mktemp -d)"
+            UPLOADS=()
+
+            for f in "${FILES[@]}"; do
+              FILE="${f/VERSION/$VERSION}"
+              TARGET="$WORKDIR/$FILE"
+
+              if curl -fsL "$BASE_URL/$FILE" -o "$TARGET"; then
+                if [ -s "$TARGET" ]; then
+                  UPLOADS+=("$TARGET")
+                  echo "Downloaded: $FILE"
+                else
+                  rm -f "$TARGET"
+                  echo "Skipped (empty): $FILE"
+                fi
+              else
+                echo "Skipped (not found): $FILE"
+              fi
+            done
+
+            if [ "${#UPLOADS[@]}" -eq 0 ]; then
+              echo "No valid files for $VERSION, skipping release"
+              rm -rf "$WORKDIR"
+              continue
+            fi
+
+            gh release create "$VERSION" "${UPLOADS[@]}" \
+              --title "MikroTik RouterOS $VERSION" \
+              --notes "Official MikroTik RouterOS $VERSION archive"
+
+            rm -rf "$WORKDIR"
+
+          done < versions.txt
