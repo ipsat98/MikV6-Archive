@@ -74,8 +74,6 @@ jobs:
             "routeros-smips-VERSION.npk"
             "routeros-tile-VERSION.npk"
             "routeros-x86-VERSION.npk"
-            "winbox.exe"
-            "winbox64.exe"
           )
 
           MAX_RETRIES=10
